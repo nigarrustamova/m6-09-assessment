@@ -1,0 +1,17 @@
+{
+  "first_name": "Nigar",
+  "last_name": "Rustamova",
+  "team": "nigar-rustamova",
+  "model": {
+    "framework": "yolo26",
+    "variant": "yolo26s",
+    "imgsz": 640,
+    "epochs_total": 50,
+    "tricks": [
+      "mosaic",
+      "mixup",
+      "cos_lr"
+    ]
+  },
+  "notes": "Week-1 yolo26s model, mAP@0.5=0.9172, exported to ONNX opset17 end-to-end head."
+}
