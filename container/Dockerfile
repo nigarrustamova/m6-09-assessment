@@ -2,19 +2,23 @@
 # Cat Detector — production inference image
 #
 # Build:
-#   docker build -t <dockerhub-username>/cat-detector:final -f container/Dockerfile .
+#   docker build -t nigarrustamova/cat-detector:final -f container/Dockerfile .
 #
 # Run (info):
-#   docker run --rm <image> info
+#   docker run --rm nigarrustamova/cat-detector:final info
 #
 # Run (predict):
 #   docker run --rm \
 #     -v /absolute/path/to/holdout:/data/input:ro \
 #     -v /absolute/path/to/results:/data/output \
-#     <image> predict
+#     nigarrustamova/cat-detector:final predict
 # ─────────────────────────────────────────────────────────────────────────────
 
 FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+ && rm -rf /var/lib/apt/lists/*
 
 # Set working directory — all app files live here inside the container
 WORKDIR /app
