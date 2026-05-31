@@ -1,34 +1,44 @@
 # Cat Detection — YOLO26 Assessment
 
-## Image for Leaderboard
+**Student:** Nigar Rustamova  
+**Docker Hub Image (Leaderboard):** `nigarrustamova/cat-detector:final`  
+**Local Submission Tag:** `rustamova-nigar-cat-detector:submission`
+
+---
+
+## Docker Pull Command (for Leaderboard)
 
 ```bash
 docker pull nigarrustamova/cat-detector:final
 ```
 
-Image: `nigarrustamova/cat-detector:final`  
-Student: Nigar Rustamova
-
-## Quick Test
+## Run (instructor contract)
 
 ```bash
-# Confirm identity
-docker run --rm nigarrustamova/cat-detector:final info
-
-# Run predictions (replace paths with your own test folders)
 docker run --rm \
-  -v /absolute/path/to/images:/data/input:ro \
-  -v /absolute/path/to/results:/data/output \
-  nigarrustamova/cat-detector:final predict
+  -v /path/to/holdout:/data/input:ro \
+  -v /path/to/results:/data/output \
+  rustamova-nigar-cat-detector:submission \
+  --input /data/input \
+  --output /data/output/predictions.json \
+  --threshold 0.25
 ```
+
+## Run (info — print student record)
+
+```bash
+docker run --rm rustamova-nigar-cat-detector:submission info
+```
+
+---
 
 ## Model Details
 
-| Field       | Value         |
-|-------------|---------------|
-| Framework   | YOLO26        |
-| Variant     | yolo26s       |
-| Input size  | 640 × 640     |
-| Epochs      | 50            |
-| mAP@0.5     | 0.9172        |
-| Export      | ONNX opset 17 |
+| Field       | Value              |
+|-------------|--------------------|
+| Framework   | YOLO26             |
+| Variant     | yolo26s            |
+| Input size  | 640 × 640          |
+| Epochs      | 50                 |
+| mAP@0.5     | 0.9172             |
+| Export      | ONNX opset 17      |

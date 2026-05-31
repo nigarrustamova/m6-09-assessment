@@ -3,27 +3,25 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Entrypoint for the cat-detector container.
 #
-# Usage:
-#   python /app/app/cli.py info
-#   python /app/app/cli.py predict
+# Instructor usage (exact contract):
+#   docker run --rm \
+#     -v /path/to/holdout:/data/input:ro \
+#     -v /path/to/results:/data/output \
+#     rustamova-nigar-cat-detector:submission \
+#     --input /data/input --output /data/output/predictions.json --threshold 0.25
 #
-# The ENTRYPOINT in the Dockerfile points here, so the subcommand is passed
-# as the first positional argument:
-#   docker run --rm <image> info
-#   docker run --rm -v ...:/data/input:ro -v ...:/data/output <image> predict
+# Info usage (optional helper):
+#   docker run --rm rustamova-nigar-cat-detector:submission info
 # ─────────────────────────────────────────────────────────────────────────────
 
-import csv
+import argparse
 import json
 import sys
 from pathlib import Path
 
-# ── paths fixed inside the container ─────────────────────────────────────────
+# ── fixed paths inside the container ─────────────────────────────────────────
 STUDENT_JSON = Path("/app/STUDENT.json")
 ONNX_MODEL   = Path("/app/models/best.onnx")
-INPUT_DIR    = Path("/data/input")
-OUTPUT_DIR   = Path("/data/output")
-OUTPUT_CSV   = OUTPUT_DIR / "predictions.csv"
 
 IMAGE_EXTS   = {".jpg", ".jpeg", ".png"}
 
@@ -33,85 +31,104 @@ def cmd_info():
     print(STUDENT_JSON.read_text())
 
 
-def cmd_predict():
-    """Run detection on every image in /data/input/ and write predictions.csv."""
-    # Import here so the info subcommand has zero heavy dependencies
-    import sys
+def cmd_predict(input_dir: Path, output_path: Path, threshold: float):
+    """Run detection on every image in input_dir and write predictions JSON."""
     sys.path.insert(0, "/app")
     from app.detector import CatDetector
 
-    # Load model once — expensive step (~0.5 s), paid only once per run
+    # Load model once — expensive step, paid only once per run
     detector = CatDetector(
         onnx_path=str(ONNX_MODEL),
         imgsz=640,
-        conf=0.25,
+        conf=threshold,          # honour the threshold passed by the instructor
         class_names=("cat",),
     )
 
-    # Collect all image files recursively
+    # Collect all image files recursively, sorted by filename (not full path)
     image_files = sorted(
-        p for p in INPUT_DIR.rglob("*")
-        if p.suffix.lower() in IMAGE_EXTS and p.is_file()
+        (p for p in input_dir.rglob("*")
+         if p.suffix.lower() in IMAGE_EXTS and p.is_file()),
+        key=lambda p: p.name,   # sort on filename only, as required
     )
 
     if not image_files:
-        print("WARNING: no images found in /data/input/", file=sys.stderr)
+        print("WARNING: no images found in", input_dir, file=sys.stderr)
 
-    # Ensure output directory exists (it is mounted, but be safe)
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    # Ensure output parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    CSV_HEADER = ["image_path", "xmin", "ymin", "xmax", "ymax", "confidence", "class"]
+    predictions = []
 
-    with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_HEADER)
-        writer.writeheader()
+    for img_file in image_files:
+        try:
+            boxes = detector.predict(str(img_file))
+        except Exception as exc:
+            print(f"ERROR on {img_file.name}: {exc}", file=sys.stderr)
+            boxes = []
 
-        for img_file in image_files:
-            # Build relative path with forward slashes (as required by the schema)
-            rel_path = img_file.relative_to(INPUT_DIR).as_posix()
-
-            try:
-                boxes = detector.predict(str(img_file))
-            except Exception as exc:
-                # Log the error but do not abort — write an empty row for this image
-                print(f"ERROR on {rel_path}: {exc}", file=sys.stderr)
-                boxes = []
-
-            if boxes:
-                for b in boxes:
-                    writer.writerow({
-                        "image_path": rel_path,
-                        "xmin":       f"{b['xmin']:g}",
-                        "ymin":       f"{b['ymin']:g}",
-                        "xmax":       f"{b['xmax']:g}",
-                        "ymax":       f"{b['ymax']:g}",
-                        "confidence": f"{b['confidence']:.6f}",
-                        "class":      b["class"],
-                    })
-            else:
-                # No detections — write a single row with empty bbox fields
-                writer.writerow({
-                    "image_path": rel_path,
-                    "xmin": "", "ymin": "", "xmax": "", "ymax": "",
-                    "confidence": "", "class": "",
+        # Build detections list — only include boxes at/above threshold
+        detections = []
+        for b in boxes:
+            if b["confidence"] >= threshold:
+                detections.append({
+                    "bbox":  [b["xmin"], b["ymin"], b["xmax"], b["ymax"]],
+                    "score": round(b["confidence"], 6),
+                    "label": b["class"],
                 })
 
-    print(f"Predictions written to {OUTPUT_CSV}  ({len(image_files)} images processed)")
+        predictions.append({
+            "image":      img_file.name,   # filename only, not full path
+            "detections": detections,
+        })
+
+    output = {
+        "model":       "yolo26-cat-onnx",
+        "threshold":   threshold,
+        "predictions": predictions,
+    }
+
+    output_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
+
+    n_with = sum(1 for p in predictions if p["detections"])
+    print(
+        f"Wrote {len(predictions)} predictions to {output_path}  "
+        f"({n_with} images with detections)"
+    )
 
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: cli.py <info|predict>", file=sys.stderr)
-        sys.exit(1)
-
-    subcmd = sys.argv[1].lower()
-
-    if subcmd == "info":
+def main():
+    # Allow `info` subcommand without any other flags
+    if len(sys.argv) >= 2 and sys.argv[1].lower() == "info":
         cmd_info()
-    elif subcmd == "predict":
-        cmd_predict()
-    else:
-        print(f"Unknown subcommand: {subcmd!r}. Use 'info' or 'predict'.", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
+
+    parser = argparse.ArgumentParser(
+        description="YOLO26 cat detector — batch inference"
+    )
+    parser.add_argument(
+        "--input",
+        type=Path,
+        required=True,
+        help="Directory containing the batch of images (recursive scan)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Full path to the JSON file to write (e.g. /data/output/predictions.json)",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.25,
+        help="Confidence floor; detections below this score are dropped (default: 0.25)",
+    )
+
+    args = parser.parse_args()
+    cmd_predict(args.input, args.output, args.threshold)
+
+
+if __name__ == "__main__":
+    main()

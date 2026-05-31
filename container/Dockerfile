@@ -2,23 +2,24 @@
 # Cat Detector — production inference image
 #
 # Build:
-#   docker build -t nigarrustamova/cat-detector:final -f container/Dockerfile .
+#   docker build -t rustamova-nigar-cat-detector:submission -f container/Dockerfile .
 #
 # Run (info):
-#   docker run --rm nigarrustamova/cat-detector:final info
+#   docker run --rm rustamova-nigar-cat-detector:submission info
 #
 # Run (predict):
 #   docker run --rm \
 #     -v /absolute/path/to/holdout:/data/input:ro \
 #     -v /absolute/path/to/results:/data/output \
-#     nigarrustamova/cat-detector:final predict
+#     rustamova-nigar-cat-detector:submission \
+#     --input /data/input \
+#     --output /data/output/predictions.json \
+#     --threshold 0.25
 # ─────────────────────────────────────────────────────────────────────────────
 
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglib2.0-0 \
- && rm -rf /var/lib/apt/lists/*
+
 
 # Set working directory — all app files live here inside the container
 WORKDIR /app
