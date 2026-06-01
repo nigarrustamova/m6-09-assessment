@@ -19,7 +19,10 @@
 
 FROM python:3.11-slim
 
-
+# System dep for OpenCV headless
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+ && rm -rf /var/lib/apt/lists/*
 
 # Set working directory — all app files live here inside the container
 WORKDIR /app
